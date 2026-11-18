@@ -1,0 +1,44 @@
+name: Become a maintainer / Maintainer werden
+description: Help keep this integration alive / Hilf mit, die Integration zu pflegen
+title: "Maintainer: @"
+labels: [maintainer]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for offering to help! Integrations rarely die because they are hard to build. They die when nobody updates them after the other side changes its API.
+        Danke, dass du mithelfen willst! Integrationen sterben selten, weil sie schwer zu bauen sind, sondern weil sie niemand nachzieht, wenn sich die Gegenseite ändert.
+  - type: input
+    id: github
+    attributes:
+      label: GitHub username / GitHub-Name
+      placeholder: "@your-name"
+    validations:
+      required: true
+  - type: textarea
+    id: experience
+    attributes:
+      label: Experience / Erfahrung
+      description: Python, asyncio, Home Assistant integrations, Internxt, links to your work.
+    validations:
+      required: true
+  - type: checkboxes
+    id: areas
+    attributes:
+      label: What would you take care of? / Was würdest du übernehmen?
+      options:
+        - label: Follow Internxt API changes / Änderungen an der Internxt-API nachziehen
+        - label: Home Assistant updates and HACS / HA-Updates und HACS
+        - label: Issues and support / Issues und Support
+        - label: Reviews and tests / Reviews und Tests
+  - type: dropdown
+    id: plan
+    attributes:
+      label: Do you have an Internxt Ultimate or Pro Business plan? (needed for real tests) / Hast du Ultimate oder Pro Business? (für echte Tests nötig)
+      options: ["Yes / Ja", "No / Nein"]
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Anything else? / Sonst noch was?

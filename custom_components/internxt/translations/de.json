@@ -1,0 +1,66 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Internxt verbinden",
+        "description": "Melde dich mit deinem Internxt-Konto an. Für Backups brauchst du den Internxt-Tarif **Ultimate** oder **Pro Business**, andere Tarife erlauben keinen Zugriff durch Drittprogramme. Dein Passwort wird nur zum Anmelden verwendet und nicht gespeichert. Noch nicht den passenden Tarif? [Hier gibt es Internxt]({upgrade_url}).",
+        "data": {
+          "email": "E-Mail",
+          "password": "Passwort"
+        },
+        "data_description": {
+          "email": "Die E-Mail-Adresse deines Internxt-Kontos.",
+          "password": "Dein Internxt-Passwort. Es entschlüsselt einmalig deinen Kontoschlüssel und wird danach verworfen."
+        }
+      },
+      "two_factor": {
+        "title": "Zwei-Faktor-Anmeldung",
+        "description": "Gib den aktuellen 6-stelligen Code aus deiner Authenticator-App ein. Jeder falsche Code zählt bei Internxt als Fehlversuch; nach 10 Fehlversuchen wird das Konto gesperrt.",
+        "data": {
+          "code": "Code"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Erneut bei Internxt anmelden",
+        "description": "Die Verbindung zu Internxt für {email} ist abgelaufen. Gib dein Passwort ein, um dich neu anzumelden.",
+        "data": {
+          "password": "Passwort"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "E-Mail oder Passwort ist falsch. Jeder Fehlversuch zählt bei Internxt mit, nach 10 Fehlversuchen wird das Konto gesperrt. Bitte erst prüfen, dann erneut versuchen.",
+      "invalid_2fa": "Der 2FA-Code wurde nicht akzeptiert. Warte auf einen neuen Code und versuche es noch einmal.",
+      "plan_not_supported": "Dein Internxt-Tarif erlaubt keinen Zugriff durch Drittprogramme. Für Home-Assistant-Backups brauchst du Internxt Ultimate oder Pro Business, erhältlich unter {upgrade_url}",
+      "account_blocked": "Internxt hat dieses Konto nach zu vielen Fehlversuchen gesperrt. Entsperren kann nur der Internxt-Support.",
+      "cannot_connect": "Internxt ist nicht erreichbar. Prüfe die Internetverbindung und versuche es erneut.",
+      "preflight_failed": "Die Anmeldung hat geklappt, aber der Verbindungstest (Ordner anlegen, kleine Datei hoch- und herunterladen) ist fehlgeschlagen. Details stehen im Home-Assistant-Protokoll.",
+      "unknown": "Unerwarteter Fehler. Details stehen im Home-Assistant-Protokoll."
+    },
+    "abort": {
+      "already_configured": "Dieses Internxt-Konto ist bereits eingerichtet.",
+      "reauth_successful": "Erneut bei Internxt angemeldet.",
+      "wrong_account": "Das ist ein anderes Internxt-Konto als das hier eingerichtete."
+    }
+  },
+  "exceptions": {
+    "auth_failed": {
+      "message": "Internxt hat die Anmeldung abgelehnt. Bitte melde dich erneut an."
+    },
+    "account_unusable": {
+      "message": "Das Internxt-Konto kann nicht für Backups genutzt werden (Tarif oder Kontosperre): {error}. Passende Tarife: {upgrade_url}"
+    },
+    "cannot_connect": {
+      "message": "Internxt ist nicht erreichbar."
+    },
+    "quota_exceeded": {
+      "message": "Nicht genug Platz in Internxt für dieses Backup: {error}"
+    },
+    "backup_not_found": {
+      "message": "Backup in Internxt nicht gefunden."
+    },
+    "operation_failed": {
+      "message": "Internxt-Vorgang fehlgeschlagen: {error}"
+    }
+  }
+}

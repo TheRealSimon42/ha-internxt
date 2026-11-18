@@ -1,0 +1,66 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect Internxt",
+        "description": "Log in with your Internxt account. Backups need an Internxt **Ultimate** or **Pro Business** plan, other plans do not allow access by third-party apps. Your password is only used to log in and is not stored. No suitable plan yet? [Get Internxt here]({upgrade_url}).",
+        "data": {
+          "email": "E-mail",
+          "password": "Password"
+        },
+        "data_description": {
+          "email": "The e-mail address of your Internxt account.",
+          "password": "Your Internxt password. It decrypts your account key once and is then discarded."
+        }
+      },
+      "two_factor": {
+        "title": "Two-factor authentication",
+        "description": "Enter the current 6-digit code from your authenticator app. Every wrong code counts as a failed login at Internxt; after 10 failed logins the account is locked.",
+        "data": {
+          "code": "Code"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Log in to Internxt again",
+        "description": "The connection to Internxt for {email} has expired. Enter your password to log in again.",
+        "data": {
+          "password": "Password"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "E-mail or password is wrong. Every failed attempt counts toward Internxt's account lock after 10 failures, so please check before trying again.",
+      "invalid_2fa": "The 2FA code was not accepted. Wait for a fresh code and try again.",
+      "plan_not_supported": "Your Internxt plan does not allow access by third-party apps. Home Assistant backups need Internxt Ultimate or Pro Business, available at {upgrade_url}",
+      "account_blocked": "Internxt has locked this account after too many failed logins. Only Internxt support can unlock it.",
+      "cannot_connect": "Could not reach Internxt. Check the internet connection and try again.",
+      "preflight_failed": "Login worked, but the connection test (create folder, upload and download a small file) failed. Details are in the Home Assistant log.",
+      "unknown": "Unexpected error. Details are in the Home Assistant log."
+    },
+    "abort": {
+      "already_configured": "This Internxt account is already set up.",
+      "reauth_successful": "Logged in to Internxt again.",
+      "wrong_account": "This is a different Internxt account than the one set up here."
+    }
+  },
+  "exceptions": {
+    "auth_failed": {
+      "message": "Internxt rejected the login. Please log in again."
+    },
+    "account_unusable": {
+      "message": "The Internxt account cannot be used for backups (plan or account lock): {error}. Suitable plans: {upgrade_url}"
+    },
+    "cannot_connect": {
+      "message": "Could not reach Internxt."
+    },
+    "quota_exceeded": {
+      "message": "Not enough space in Internxt for this backup: {error}"
+    },
+    "backup_not_found": {
+      "message": "Backup not found in Internxt."
+    },
+    "operation_failed": {
+      "message": "Internxt operation failed: {error}"
+    }
+  }
+}

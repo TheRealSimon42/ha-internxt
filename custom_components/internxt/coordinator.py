@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 import logging
 from typing import TYPE_CHECKING
@@ -50,8 +51,9 @@ class InternxtStorageCoordinator(DataUpdateCoordinator[StorageInfo]):
 
     async def _async_update_data(self) -> StorageInfo:
         try:
-            usage = await self.client.usage()
-            limit = await self.client.limit()
+            usage, limit = await asyncio.gather(
+                self.client.usage(), self.client.limit()
+            )
             return StorageInfo(
                 used=int(usage["total"]), total=int(limit["maxSpaceBytes"])
             )

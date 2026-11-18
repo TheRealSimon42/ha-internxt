@@ -5,8 +5,6 @@ from __future__ import annotations
 from unittest.mock import patch
 
 import pytest
-from pytest_homeassistant_custom_component.common import MockConfigEntry
-
 from homeassistant import config_entries
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
@@ -23,6 +21,7 @@ from custom_components.internxt.const import (
     DOMAIN,
 )
 
+from .common import MockConfigEntry
 from .conftest import EMAIL, MNEMONIC, PASSWORD, USER, FakeClient
 
 

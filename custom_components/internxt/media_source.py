@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import logging
 import mimetypes
+import re
+from time import monotonic
 from typing import override
 
 from aiohttp import web
@@ -17,13 +19,23 @@ from homeassistant.components.media_source import (
     PlayMedia,
     Unresolvable,
 )
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 
 from . import InternxtConfigEntry
-from .aiointernxt import DriveFile, InternxtError, InternxtNotFoundError
+from .aiointernxt import (
+    DownloadStream,
+    DriveFile,
+    InternxtAuthError,
+    InternxtError,
+    InternxtNotFoundError,
+)
 from .const import DOMAIN, MEDIA_VIEW_URL
 
 _LOGGER = logging.getLogger(__name__)
+
+META_TTL = 300  # files can be replaced or deleted in Internxt at any time
+META_CACHE_SIZE = 500
 
 MEDIA_CLASSES = {
     "image": MediaClass.IMAGE,
@@ -45,7 +57,11 @@ def _mime(name: str) -> str | None:
 
 def _loaded_entry(hass: HomeAssistant, entry_id: str) -> InternxtConfigEntry | None:
     entry = hass.config_entries.async_get_entry(entry_id)
-    if entry is None or entry.domain != DOMAIN or not hasattr(entry, "runtime_data"):
+    if (
+        entry is None
+        or entry.domain != DOMAIN
+        or entry.state is not ConfigEntryState.LOADED
+    ):
         return None
     return entry
 
@@ -72,7 +88,10 @@ class InternxtMediaSource(MediaSource):
         mime = _mime(name)
         if mime is None or _loaded_entry(self.hass, entry_id) is None:
             raise Unresolvable(f"Cannot play {name}")
-        return PlayMedia(f"{MEDIA_VIEW_URL}/{entry_id}/{file_uuid}/{name}", mime)
+        # Only id and extension go into the URL: Home Assistant decodes the path when it
+        # signs it, and characters like "#" or "?" in a file name would break the link.
+        ext = "".join(re.findall(r"\.[A-Za-z0-9]{1,8}$", name)).lower()
+        return PlayMedia(f"{MEDIA_VIEW_URL}/{entry_id}/{file_uuid}/media{ext}", mime)
 
     @override
     async def async_browse_media(self, item: MediaSourceItem) -> BrowseMediaSource:
@@ -160,7 +179,11 @@ class InternxtMediaSource(MediaSource):
 
 
 class InternxtMediaView(http.HomeAssistantView):
-    """Stream a decrypted Internxt file, with HTTP range support for seeking."""
+    """Stream a decrypted Internxt file, with HTTP range support for seeking.
+
+    The media type comes from the file in Internxt, never from the URL, so the view
+    only serves images, videos and audio (not, for example, backups).
+    """
 
     url = MEDIA_VIEW_URL + "/{entry_id}/{file_uuid}/{name}"
     name = "api:internxt:media"
@@ -168,82 +191,118 @@ class InternxtMediaView(http.HomeAssistantView):
 
     def __init__(self, hass: HomeAssistant) -> None:
         self.hass = hass
-        self._meta: dict[str, DriveFile] = {}
+        self._meta: dict[tuple[str, str], tuple[DriveFile, float]] = {}
 
     async def head(
         self, request: web.Request, entry_id: str, file_uuid: str, name: str
     ) -> web.StreamResponse:
-        return await self.get(request, entry_id, file_uuid, name, head=True)
+        return await self._serve(request, entry_id, file_uuid, head=True)
 
     async def get(
-        self,
-        request: web.Request,
-        entry_id: str,
-        file_uuid: str,
-        name: str,
-        head: bool = False,
+        self, request: web.Request, entry_id: str, file_uuid: str, name: str
+    ) -> web.StreamResponse:
+        return await self._serve(request, entry_id, file_uuid, head=False)
+
+    async def _file(
+        self, entry: InternxtConfigEntry, file_uuid: str, *, fresh: bool = False
+    ) -> DriveFile:
+        key = (entry.entry_id, file_uuid)
+        cached = self._meta.get(key)
+        if cached and not fresh and monotonic() - cached[1] < META_TTL:
+            return cached[0]
+        file = await entry.runtime_data.client.file_meta(file_uuid)
+        self._meta[key] = (file, monotonic())
+        if len(self._meta) > META_CACHE_SIZE:
+            self._meta.pop(next(iter(self._meta)))
+        return file
+
+    def _failed(
+        self, entry: InternxtConfigEntry, err: InternxtError
+    ) -> web.HTTPException:
+        if isinstance(err, InternxtNotFoundError):
+            return web.HTTPNotFound()
+        if isinstance(err, InternxtAuthError):
+            entry.async_start_reauth(self.hass)
+        _LOGGER.warning("Internxt media request failed: %s", err)
+        return web.HTTPBadGateway()
+
+    async def _serve(
+        self, request: web.Request, entry_id: str, file_uuid: str, *, head: bool
     ) -> web.StreamResponse:
         entry = _loaded_entry(self.hass, entry_id)
-        mime = _mime(name)
-        if entry is None or mime is None:
+        if entry is None:
             raise web.HTTPNotFound
-        client = entry.runtime_data.client
         try:
-            file = self._meta.get(file_uuid) or await client.file_meta(file_uuid)
-        except InternxtNotFoundError as err:
-            raise web.HTTPNotFound from err
+            file = await self._file(entry, file_uuid)
         except InternxtError as err:
-            _LOGGER.debug("Internxt media meta failed: %s", err)
-            raise web.HTTPBadGateway from err
-        self._meta[file_uuid] = file
-        if len(self._meta) > 500:
-            self._meta.pop(next(iter(self._meta)))
+            raise self._failed(entry, err) from err
+        mime = _mime(file.name)
+        if mime is None:
+            raise web.HTTPNotFound
 
-        start, end, status = 0, file.size - 1, 200
         try:
-            rng = request.http_range
+            start, end = _parse_range(request, file.size)
         except ValueError:
             raise web.HTTPRequestRangeNotSatisfiable(
                 headers={"Content-Range": f"bytes */{file.size}"}
             ) from None
-        if rng.start is not None or rng.stop is not None:
-            if rng.start is not None and rng.start < 0:  # suffix range "bytes=-N"
-                start = max(file.size + rng.start, 0)
-            else:
-                start = rng.start or 0
-                if rng.stop is not None:
-                    end = min(rng.stop - 1, file.size - 1)
-            if start > end or start >= file.size:
-                raise web.HTTPRequestRangeNotSatisfiable(
-                    headers={"Content-Range": f"bytes */{file.size}"}
-                )
-            status = 206
-
-        response = web.StreamResponse(status=status)
+        partial = (start, end) != (0, file.size - 1)
+        response = web.StreamResponse(status=206 if partial else 200)
         response.content_type = mime
-        response.content_length = end - start + 1
+        response.content_length = max(end - start + 1, 0)
         response.headers["Accept-Ranges"] = "bytes"
         response.headers["Cache-Control"] = "private, max-age=3600"
-        if status == 206:
+        if partial:
             response.headers["Content-Range"] = f"bytes {start}-{end}/{file.size}"
         if head or file.size == 0:
             await response.prepare(request)
             return response
 
-        try:
-            stream = await client.download(file, start=start, end=end)
-        except InternxtError as err:
-            _LOGGER.debug("Internxt media download failed: %s", err)
-            raise web.HTTPBadGateway from err
-        await response.prepare(request)
+        stream = await self._open(entry, file, start, end)
         async with stream:
+            await response.prepare(request)
             try:
                 async for chunk in stream:
                     await response.write(chunk)
             except InternxtError as err:
-                _LOGGER.debug("Internxt media stream interrupted: %s", err)
+                # headers with the full length are already out: close the connection so
+                # the player sees the error right away instead of waiting for bytes
+                _LOGGER.warning("Internxt media stream interrupted: %s", err)
+                response.force_close()
                 return response
             except ConnectionResetError:
-                return response  # player closed the connection while seeking
+                return response  # player closed the connection, e.g. while seeking
         await response.write_eof()
         return response
+
+    async def _open(
+        self, entry: InternxtConfigEntry, file: DriveFile, start: int, end: int
+    ) -> DownloadStream:
+        client = entry.runtime_data.client
+        try:
+            return await client.download(file, start=start, end=end)
+        except InternxtNotFoundError:
+            pass  # cached metadata may point to a replaced file: retry with fresh data
+        except InternxtError as err:
+            raise self._failed(entry, err) from err
+        try:
+            fresh = await self._file(entry, file.uuid, fresh=True)
+            if fresh.size != file.size:
+                raise web.HTTPNotFound  # the file changed; let the player start over
+            return await client.download(fresh, start=start, end=end)
+        except InternxtError as err:
+            raise self._failed(entry, err) from err
+
+
+def _parse_range(request: web.Request, size: int) -> tuple[int, int]:
+    """Byte range of the request as (start, end) inclusive; ValueError if unsatisfiable."""
+    rng = request.http_range  # raises ValueError for malformed or multiple ranges
+    if rng.start is None and rng.stop is None:
+        return 0, size - 1
+    if rng.start is not None and rng.start < 0:  # suffix range "bytes=-N"
+        return max(size + rng.start, 0), size - 1
+    start = rng.start or 0
+    end = size - 1 if rng.stop is None else min(rng.stop - 1, size - 1)
+    if start > end or start >= size:
+        raise ValueError("range not satisfiable")
+    return start, end

@@ -6,14 +6,16 @@ in-memory client stands in for it, so the tests cover the Home Assistant side.
 
 from __future__ import annotations
 
+import itertools
 from collections.abc import AsyncIterator, Generator
 from datetime import UTC, datetime, timedelta
-import itertools
+from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
 import pytest
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from homeassistant.core import HomeAssistant
+from homeassistant.setup import async_setup_component
 
 from custom_components.internxt.aiointernxt import (
     Credentials,
@@ -32,6 +34,8 @@ from custom_components.internxt.const import (
     DOMAIN,
 )
 
+from .common import MockConfigEntry
+
 EMAIL = "simon@example.com"
 PASSWORD = "secret password"
 MNEMONIC = " ".join(["abandon"] * 11 + ["about"])
@@ -46,8 +50,16 @@ USER = User(
 
 
 @pytest.fixture(autouse=True)
-def auto_enable_custom_integrations(enable_custom_integrations: None) -> None:
-    """Load integrations from custom_components."""
+def auto_enable_custom_integrations(request: pytest.FixtureRequest) -> None:
+    """Load integrations from custom_components (pytest-homeassistant does that by default)."""
+    if "enable_custom_integrations" in request.fixturenames or _has_fixture(
+        request, "enable_custom_integrations"
+    ):
+        request.getfixturevalue("enable_custom_integrations")
+
+
+def _has_fixture(request: pytest.FixtureRequest, name: str) -> bool:
+    return bool(request._fixturemanager.getfixturedefs(name, request.node))
 
 
 class FakeClient:
@@ -69,6 +81,7 @@ class FakeClient:
         self.data: dict[str, bytes] = {}
         self.deleted: list[str] = []
         self.trashed: list[str] = []
+        self.stream_fail_after: int | None = None
         self.download_ranges: list[tuple[int, int | None]] = []
         self.refresh_calls = 0
 
@@ -175,6 +188,14 @@ class FakeClient:
             raise InternxtNotFoundError("not found")
         return self.files[file_uuid]
 
+    async def rename_file(self, file_uuid: str, name: str) -> None:
+        import dataclasses
+
+        plain, _, ext = name.rpartition(".")
+        self.files[file_uuid] = dataclasses.replace(
+            self.files[file_uuid], plain_name=plain, type=ext
+        )
+
     async def trash_file(self, file_uuid: str) -> None:
         self.trashed.append(file_uuid)
         del self.files[file_uuid]
@@ -214,9 +235,15 @@ class FakeClient:
     async def download(
         self, file: DriveFile, *, start: int = 0, end: int | None = None
     ) -> FakeStream:
+        from custom_components.internxt.aiointernxt import InternxtNotFoundError
+
         self.download_ranges.append((start, end))
+        if file.uuid not in self.files:
+            raise InternxtNotFoundError("gone")
         data = self.data[file.uuid]
-        return FakeStream(data[start : None if end is None else end + 1])
+        return FakeStream(
+            data[start : None if end is None else end + 1], self.stream_fail_after
+        )
 
     async def download_bytes(self, file: DriveFile) -> bytes:
         return self.data[file.uuid]
@@ -233,9 +260,10 @@ class FakeClient:
 class FakeStream:
     """Mimics aiointernxt.DownloadStream."""
 
-    def __init__(self, data: bytes) -> None:
+    def __init__(self, data: bytes, fail_after: int | None = None) -> None:
         self._chunks = [data[i : i + 1000] for i in range(0, len(data), 1000)]
         self.closed = False
+        self._fail_after = fail_after
 
     def __aiter__(self) -> FakeStream:
         return self
@@ -243,6 +271,14 @@ class FakeStream:
     async def __anext__(self) -> bytes:
         if not self._chunks:
             raise StopAsyncIteration
+        if self._fail_after is not None:
+            if self._fail_after == 0:
+                from custom_components.internxt.aiointernxt import (
+                    InternxtConnectionError,
+                )
+
+                raise InternxtConnectionError("connection lost")
+            self._fail_after -= 1
         return self._chunks.pop(0)
 
     async def aclose(self) -> None:
@@ -281,3 +317,19 @@ def config_entry() -> MockConfigEntry:
         },
         entry_id="01JINTERNXTENTRY000000000",
     )
+
+
+@pytest.fixture
+async def loaded(
+    hass: HomeAssistant,
+    fake_client: FakeClient,
+    config_entry: MockConfigEntry,
+    tmp_path: Path,
+) -> MockConfigEntry:
+    hass.config.allowlist_external_dirs = {str(tmp_path)}
+    with patch("homeassistant.components.backup.is_hassio", return_value=False):
+        assert await async_setup_component(hass, "backup", {})
+    config_entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(config_entry.entry_id)
+    await hass.async_block_till_done()
+    return config_entry

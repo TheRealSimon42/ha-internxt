@@ -88,6 +88,18 @@
     },
     "delete_failed": {
       "message": "Löschen von {path} in Internxt fehlgeschlagen: {error}"
+    },
+    "invalid_path": {
+      "message": "{path} ist kein gültiger Internxt-Pfad."
+    },
+    "duplicate_name": {
+      "message": "{name} kommt mehrfach vor; in einem Internxt-Ordner müssen Dateinamen eindeutig sein."
+    },
+    "backup_folder_protected": {
+      "message": "{path} liegt im Backup-Ordner {folder}. Backups bitte unter Einstellungen → System → Backups löschen, damit Home Assistant den Überblick behält."
+    },
+    "overwrite_incomplete": {
+      "message": "Die neue Fassung von {path} liegt als {temp} in Internxt, die alte im Papierkorb, aber das Umbenennen ist fehlgeschlagen ({error}). Benenne {temp} in Internxt um."
     }
   },
   "entity": {
@@ -125,13 +137,13 @@
         },
         "overwrite": {
           "name": "Überschreiben",
-          "description": "Eine Datei mit gleichem Namen ersetzen; die alte Fassung landet im Internxt-Papierkorb."
+          "description": "Eine Datei mit gleichem Namen ersetzen. Erst wird die neue hochgeladen, danach landet die alte Fassung im Internxt-Papierkorb."
         }
       }
     },
     "delete": {
       "name": "Dateien löschen",
-      "description": "Löscht Dateien in Internxt. Standardmäßig landen sie im Internxt-Papierkorb.",
+      "description": "Löscht Dateien in Internxt. Standardmäßig landen sie im Internxt-Papierkorb. Backups lassen sich hier nicht löschen, dafür gibt es die Backup-Einstellungen.",
       "fields": {
         "config_entry_id": {
           "name": "Internxt-Konto",

@@ -1,0 +1,83 @@
+# Checklist against the Integration Quality Scale. Custom integrations are not
+# graded by Home Assistant; this keeps the bar visible for a possible move to core.
+rules:
+  # Bronze
+  action-setup: done
+  appropriate-polling: done # storage usage every 30 minutes
+  brands: done # brand/ folder
+  common-modules: done
+  config-flow-test-coverage: done
+  config-flow: done
+  dependency-transparency:
+    status: todo
+    comment: aiointernxt ships inside the integration until it is published on PyPI.
+  docs-actions: done
+  docs-conditions:
+    status: exempt
+    comment: No conditions.
+  docs-high-level-description: done
+  docs-installation-instructions: done
+  docs-removal-instructions: todo
+  docs-triggers:
+    status: exempt
+    comment: No triggers.
+  entity-event-setup:
+    status: exempt
+    comment: Entities only read from the coordinator.
+  entity-unique-id: done
+  has-entity-name: done
+  runtime-data: done
+  test-before-configure: done # login plus connection test in the config flow
+  test-before-setup: done
+  unique-config-entry: done
+  # Silver
+  action-exceptions: done
+  config-entry-unloading: done
+  docs-configuration-parameters:
+    status: exempt
+    comment: No options flow.
+  docs-installation-parameters: done
+  entity-unavailable: done
+  integration-owner: done
+  log-when-unavailable: done # DataUpdateCoordinator
+  parallel-updates: done
+  reauthentication-flow: done
+  test-coverage: done
+  # Gold
+  devices: done # one service device per account
+  diagnostics: done
+  discovery:
+    status: exempt
+    comment: Cloud service.
+  discovery-update-info:
+    status: exempt
+    comment: Cloud service.
+  docs-data-update: done
+  docs-examples: done
+  docs-known-limitations: todo
+  docs-supported-devices:
+    status: exempt
+    comment: Cloud service, no devices.
+  docs-supported-functions: done
+  docs-troubleshooting: todo
+  docs-use-cases: done
+  dynamic-devices:
+    status: exempt
+    comment: One device per account.
+  entity-category: done
+  entity-device-class: done
+  entity-disabled-by-default:
+    status: exempt
+    comment: All sensors are useful by default.
+  entity-translations: done
+  exception-translations: done
+  icon-translations: done
+  reconfiguration-flow: todo
+  repair-issues: todo
+  stale-devices:
+    status: exempt
+    comment: One device per account.
+  # Platinum
+  async-dependency: done
+  inject-websession: done
+  strict-typing: todo

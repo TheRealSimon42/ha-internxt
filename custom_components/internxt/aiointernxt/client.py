@@ -397,7 +397,16 @@ class InternxtClient:
         for folder in await self.list_folders(parent_uuid):
             if folder.name == name:
                 return folder
-        return await self.create_folder(parent_uuid, name)
+        try:
+            return await self.create_folder(parent_uuid, name)
+        except InternxtConflictError:
+            # created concurrently (e.g. two automations); the listing may lag a moment
+            for _ in range(3):
+                await asyncio.sleep(FOLDER_SETTLE_DELAY)
+                for folder in await self.list_folders(parent_uuid):
+                    if folder.name == name:
+                        return folder
+            raise
 
     async def ensure_folder_path(self, parent_uuid: str, path: str) -> str:
         """Create every folder of a slash-separated path below parent; return the last uuid."""
@@ -427,6 +436,18 @@ class InternxtClient:
             "DELETE",
             f"{self._drive}/files/{file_uuid}",
             headers=self._bearer(),
+            expect_json=False,
+        )
+
+    @_translate_unexpected
+    async def rename_file(self, file_uuid: str, name: str) -> None:
+        """Rename a file; `name` includes the extension."""
+        plain_name, file_type = split_name(name)
+        await self._request(
+            "PUT",
+            f"{self._drive}/files/{file_uuid}/meta",
+            headers=self._bearer(),
+            json={"plainName": plain_name, "type": file_type},
             expect_json=False,
         )
 
@@ -478,8 +499,26 @@ class InternxtClient:
     ) -> DriveFile:
         """Encrypt and upload a stream of exactly `size` bytes.
 
-        Errors from `stream` itself are raised as InternxtStreamError.
+        Errors from `stream` itself are raised as InternxtStreamError. The stream
+        is closed afterwards (if it has `aclose`), also when the upload fails.
         """
+        try:
+            return await self._upload(
+                stream, size, folder_uuid, name, progress, part_size
+            )
+        finally:
+            if (aclose := getattr(stream, "aclose", None)) is not None:
+                await aclose()
+
+    async def _upload(
+        self,
+        stream: AsyncIterator[bytes],
+        size: int,
+        folder_uuid: str,
+        name: str,
+        progress: ProgressCallback | None,
+        part_size: int,
+    ) -> DriveFile:
         plain_name, file_type = split_name(name)
         max_size = await self._max_upload_size_or_none()
         if max_size is not None and size > max_size:
@@ -783,6 +822,10 @@ class InternxtClient:
             )
         length = end - start + 1
         if resp.status == 206:
+            got = resp.headers.get("Content-Range", "")
+            if not got.startswith(f"bytes {start}-"):
+                resp.release()
+                raise InternxtError(f"storage answered range {got!r} for {start}-{end}")
             return DownloadStream(
                 resp, crypto.ctr_cipher_at(key, iv, start), None, limit=length
             )

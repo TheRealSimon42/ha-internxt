@@ -1,6 +1,7 @@
 """Plan error form carries the purchase link placeholder."""
 
 from homeassistant import config_entries
+
 from custom_components.internxt.aiointernxt import InternxtPlanError
 from custom_components.internxt.const import DOMAIN
 from tests.conftest import EMAIL, PASSWORD

@@ -64,6 +64,8 @@ class FakeInternxt:
         self.max_upload: int | None = None
         self.starts = 0
         self.ignore_range = False
+        self.wrong_range = False
+        self.folder_race = False  # someone else creates the folder first
         self.trashed: dict[str, dict[str, Any]] = {}
         self.discard_puts = (
             False  # memory test: don't keep uploaded data in this process
@@ -95,6 +97,7 @@ class FakeInternxt:
         r.add_get("/storage/obj/{fid}", self.get_object)
         r.add_get("/drive/files/limits", self.limits)
         r.add_get("/drive/files/{uuid}/meta", self.file_meta)
+        r.add_put("/drive/files/{uuid}/meta", self.rename)
         r.add_post("/drive/storage/trash/add", self.trash_add)
         return app
 
@@ -161,9 +164,22 @@ class FakeInternxt:
         )
         return web.json_response({kind: page, "nextCursor": nxt})
 
+    async def rename(self, request: web.Request) -> web.Response:
+        self._bearer(request)
+        body = await request.json()
+        f = self.files[request.match_info["uuid"]]
+        f["plainName"], f["type"] = body["plainName"], body["type"]
+        return web.json_response({})
+
     async def create_folder(self, request: web.Request) -> web.Response:
         self._bearer(request)
         body = await request.json()
+        if self.folder_race:
+            self.folder_race = False
+            fid = str(uuid.uuid4())
+            self.folders[fid] = {"uuid": fid, "plainName": body["plainName"],
+                                 "parentUuid": body["parentFolderUuid"]}  # fmt: skip
+            return web.json_response({"message": "Folder already exists"}, status=409)
         fid = str(uuid.uuid4())
         self.folders[fid] = {"uuid": fid, "plainName": body["plainName"],
                              "parentUuid": body["parentFolderUuid"]}  # fmt: skip
@@ -277,6 +293,8 @@ class FakeInternxt:
         rng = request.headers.get("Range")
         if rng and not self.ignore_range:
             a, b = rng.removeprefix("bytes=").split("-")
+            if self.wrong_range:
+                a = "0"
             part = data[int(a) : int(b) + 1]
             return web.Response(
                 status=206, body=part,
@@ -665,3 +683,44 @@ async def test_file_meta_find_trash_and_paths(fake) -> None:
     await client.trash_file(f.uuid)
     assert f.uuid in server.trashed
     assert await client.find_file(leaf, "snap.jpg") is None
+
+
+async def test_rename_and_folder_race(fake, monkeypatch) -> None:
+    server, client = fake
+    monkeypatch.setattr(client_mod, "FOLDER_SETTLE_DELAY", 0)
+    await client.login("simon@example.com", PASSWORD)
+    server.folder_race = True
+    folder = await client.ensure_folder("root-uuid", "Kameras")
+    assert folder.name == "Kameras"
+    f = await client.upload_bytes(b"x", folder_uuid=folder.uuid, name="a.tmp")
+    await client.rename_file(f.uuid, "snap.jpg")
+    assert (await client.file_meta(f.uuid)).name == "snap.jpg"
+
+
+async def test_upload_closes_source_on_failure(fake) -> None:
+    server, client = fake
+    await client.login("simon@example.com", PASSWORD)
+    closed = []
+
+    async def gen():
+        try:
+            yield b"x" * 10
+        finally:
+            closed.append(True)
+
+    server.put_failures = [web.Response(status=400)]
+    with pytest.raises(InternxtError):
+        await client.upload(gen(), size=10, folder_uuid="root-uuid", name="a.bin")
+    assert closed == [True]
+
+
+async def test_range_mismatch_is_rejected(fake) -> None:
+    server, client = fake
+    await client.login("simon@example.com", PASSWORD)
+    f = await client.upload_bytes(
+        os.urandom(5000), folder_uuid="root-uuid", name="v.mp4"
+    )
+    server.wrong_range = True
+    with pytest.raises(InternxtError, match="range"):
+        await client.download(f, start=100, end=199)
+    assert _connections(client) == 0

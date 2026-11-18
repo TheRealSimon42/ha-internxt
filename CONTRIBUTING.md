@@ -6,7 +6,7 @@ Pull requests are welcome. Want to help long-term? Open a [maintainer issue](../
 
 - `aiointernxt/`: async client for Internxt Drive (no Home Assistant code). Tests run against a local fake of the Internxt API.
 - `custom_components/internxt/`: the integration. It ships a copy of `aiointernxt` until the library is on PyPI; after changing the library run `scripts/sync_lib.sh`.
-- `tests/`: integration tests with `pytest-homeassistant-custom-component`.
+- `tests/`: integration tests with `pytest-homeassistant` (Home Assistant 2026.11+) or `pytest-homeassistant-custom-component` (older); `tests/common.py` picks whichever is installed.
 - `poc/poc.py`: end-to-end check against a real account (asks for credentials, stores none).
 
 ## Ground rules
@@ -20,7 +20,7 @@ Pull requests are welcome. Want to help long-term? Open a [maintainer issue](../
 ```bash
 python3 -m venv .venv && .venv/bin/pip install aiohttp cryptography pytest pytest-asyncio pytest-timeout
 (cd aiointernxt && ../.venv/bin/pip install -e . && ../.venv/bin/python -m pytest)
-python3 -m venv .venv-ha && .venv-ha/bin/pip install "pytest-homeassistant-custom-component==0.13.373"
+python3 -m venv .venv-ha && .venv-ha/bin/pip install "pytest-homeassistant==2026.11.2"
 .venv-ha/bin/python -m pytest
 ```
 

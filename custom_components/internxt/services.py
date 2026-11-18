@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 import logging
 from pathlib import Path, PurePosixPath
+import secrets
 from typing import IO, Any
 
 import voluptuous as vol
@@ -16,13 +18,21 @@ from homeassistant.core import (
     ServiceCall,
     ServiceResponse,
     SupportsResponse,
+    callback,
 )
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers.service import async_register_admin_service
 
 from . import InternxtConfigEntry, async_ensure_fresh_token
-from .aiointernxt import InternxtError, InternxtNotFoundError
-from .const import DEFAULT_UPLOAD_FOLDER, DOMAIN
+from .aiointernxt import (
+    InternxtAuthError,
+    InternxtClient,
+    InternxtConflictError,
+    InternxtError,
+    InternxtNotFoundError,
+)
+from .const import CONF_FOLDER_NAME, DEFAULT_FOLDER_NAME, DEFAULT_UPLOAD_FOLDER, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -33,11 +43,15 @@ CONF_PATH = "path"
 CONF_PERMANENTLY = "permanently"
 
 READ_CHUNK = 1024 * 1024
+# Internxt frees a name a moment after the old file went to the trash.
+RENAME_RETRY_DELAYS = (0.5, 1.0, 2.0, 4.0, 8.0)
 
 UPLOAD_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_CONFIG_ENTRY_ID): cv.string,
-        vol.Required(CONF_FILENAME): vol.All(cv.ensure_list, [cv.string]),
+        vol.Required(CONF_FILENAME): vol.All(
+            cv.ensure_list, vol.Length(min=1), [cv.string]
+        ),
         vol.Optional(CONF_DESTINATION_FOLDER, default=DEFAULT_UPLOAD_FOLDER): cv.string,
         vol.Optional(CONF_OVERWRITE, default=False): cv.boolean,
     }
@@ -53,8 +67,9 @@ DELETE_SCHEMA = vol.Schema(
 )
 
 
+@callback
 def async_setup_services(hass: HomeAssistant) -> None:
-    """Register the Internxt actions."""
+    """Register the actions. Admin only for users; automations and scripts may use them."""
 
     async def upload(call: ServiceCall) -> ServiceResponse:
         return await _async_upload(hass, call)
@@ -62,19 +77,11 @@ def async_setup_services(hass: HomeAssistant) -> None:
     async def delete(call: ServiceCall) -> ServiceResponse:
         return await _async_delete(hass, call)
 
-    hass.services.async_register(
-        DOMAIN,
-        "upload",
-        upload,
-        schema=UPLOAD_SCHEMA,
-        supports_response=SupportsResponse.OPTIONAL,
+    async_register_admin_service(
+        hass, DOMAIN, "upload", upload, UPLOAD_SCHEMA, SupportsResponse.OPTIONAL
     )
-    hass.services.async_register(
-        DOMAIN,
-        "delete",
-        delete,
-        schema=DELETE_SCHEMA,
-        supports_response=SupportsResponse.OPTIONAL,
+    async_register_admin_service(
+        hass, DOMAIN, "delete", delete, DELETE_SCHEMA, SupportsResponse.OPTIONAL
     )
 
 
@@ -95,9 +102,22 @@ def _loaded_entry(hass: HomeAssistant, entry_id: str) -> InternxtConfigEntry:
     return entry
 
 
+def _clean_folder(raw: str) -> str:
+    """Normalize an Internxt folder path; reject '..' and similar tricks."""
+    parts = [p for p in raw.replace("\\", "/").split("/") if p.strip()]
+    if any(p.strip() in (".", "..") for p in parts):
+        raise ServiceValidationError(
+            translation_domain=DOMAIN,
+            translation_key="invalid_path",
+            translation_placeholders={"path": raw},
+        )
+    return "/".join(p.strip() for p in parts)
+
+
 def _check_files(hass: HomeAssistant, filenames: list[str]) -> list[tuple[Path, int]]:
-    """Validate paths (allowlist, existence) and return them with their sizes."""
+    """Validate local paths (allowlist, existence, unique names); runs in the executor."""
     result: list[tuple[Path, int]] = []
+    seen: set[str] = set()
     for name in filenames:
         if not hass.config.is_allowed_path(name):
             raise ServiceValidationError(
@@ -112,6 +132,13 @@ def _check_files(hass: HomeAssistant, filenames: list[str]) -> list[tuple[Path, 
                 translation_key="file_not_found",
                 translation_placeholders={"filename": name},
             )
+        if path.name in seen:
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="duplicate_name",
+                translation_placeholders={"name": path.name},
+            )
+        seen.add(path.name)
         result.append((path, path.stat().st_size))
     return result
 
@@ -126,23 +153,45 @@ async def _read_file(hass: HomeAssistant, path: Path) -> AsyncIterator[bytes]:
         await hass.async_add_executor_job(handle.close)
 
 
-def _raise_internxt(err: InternxtError, key: str, **placeholders: str) -> None:
-    raise HomeAssistantError(
+async def _rename_when_free(client: InternxtClient, file_uuid: str, name: str) -> None:
+    for delay in RENAME_RETRY_DELAYS:
+        try:
+            await client.rename_file(file_uuid, name)
+        except InternxtConflictError:
+            await asyncio.sleep(delay)
+        else:
+            return
+    await client.rename_file(file_uuid, name)
+
+
+def _internxt_error(
+    hass: HomeAssistant,
+    entry: InternxtConfigEntry,
+    err: InternxtError,
+    key: str,
+    **placeholders: str,
+) -> HomeAssistantError:
+    if isinstance(err, InternxtAuthError):
+        entry.async_start_reauth(hass)
+        return HomeAssistantError(
+            translation_domain=DOMAIN, translation_key="auth_failed"
+        )
+    return HomeAssistantError(
         translation_domain=DOMAIN,
         translation_key=key,
         translation_placeholders={**placeholders, "error": str(err)},
-    ) from err
+    )
 
 
 async def _async_upload(hass: HomeAssistant, call: ServiceCall) -> ServiceResponse:
     entry = _loaded_entry(hass, call.data[CONF_CONFIG_ENTRY_ID])
+    folder_path = _clean_folder(call.data[CONF_DESTINATION_FOLDER])
     files = await hass.async_add_executor_job(
         _check_files, hass, call.data[CONF_FILENAME]
     )
     client = entry.runtime_data.client
-    folder_path = call.data[CONF_DESTINATION_FOLDER].strip("/")
     uploaded: list[dict[str, Any]] = []
-    current = ""
+    current = folder_path
     try:
         await async_ensure_fresh_token(hass, entry)
         folder_uuid = await client.ensure_folder_path(
@@ -151,29 +200,47 @@ async def _async_upload(hass: HomeAssistant, call: ServiceCall) -> ServiceRespon
         for path, size in files:
             current = str(path)
             existing = await client.find_file(folder_uuid, path.name)
-            if existing is not None:
-                if not call.data[CONF_OVERWRITE]:
-                    raise ServiceValidationError(
-                        translation_domain=DOMAIN,
-                        translation_key="file_exists",
-                        translation_placeholders={"path": f"{folder_path}/{path.name}"},
-                    )
-                await client.trash_file(existing.uuid)  # old version stays in the trash
-            result = await client.upload(
-                _read_file(hass, path),
-                size=size,
-                folder_uuid=folder_uuid,
-                name=path.name,
+            if existing is not None and not call.data[CONF_OVERWRITE]:
+                raise ServiceValidationError(
+                    translation_domain=DOMAIN,
+                    translation_key="file_exists",
+                    translation_placeholders={"path": f"{folder_path}/{path.name}"},
+                )
+            # With overwrite, upload under a temporary name first: if the upload fails,
+            # the old version stays untouched.
+            name = (
+                path.name
+                if existing is None
+                else f"{path.name}.{secrets.token_hex(4)}.part"
             )
+            result = await client.upload(
+                _read_file(hass, path), size=size, folder_uuid=folder_uuid, name=name
+            )
+            if existing is not None:
+                await client.trash_file(existing.uuid)  # old version stays in the trash
+                try:
+                    await _rename_when_free(client, result.uuid, path.name)
+                except InternxtError as err:
+                    raise HomeAssistantError(
+                        translation_domain=DOMAIN,
+                        translation_key="overwrite_incomplete",
+                        translation_placeholders={
+                            "path": f"{folder_path}/{path.name}",
+                            "temp": name,
+                            "error": str(err),
+                        },
+                    ) from err
             uploaded.append(
                 {
-                    "path": f"{folder_path}/{result.name}",
-                    "size": result.size,
+                    "path": f"{folder_path}/{path.name}".lstrip("/"),
+                    "size": size,
                     "uuid": result.uuid,
                 }
             )
     except InternxtError as err:
-        _raise_internxt(err, "upload_failed", filename=current or folder_path)
+        raise _internxt_error(
+            hass, entry, err, "upload_failed", filename=current
+        ) from err
     _LOGGER.debug(
         "Uploaded %d file(s) to Internxt folder %s", len(uploaded), folder_path
     )
@@ -183,9 +250,21 @@ async def _async_upload(hass: HomeAssistant, call: ServiceCall) -> ServiceRespon
 async def _async_delete(hass: HomeAssistant, call: ServiceCall) -> ServiceResponse:
     entry = _loaded_entry(hass, call.data[CONF_CONFIG_ENTRY_ID])
     client = entry.runtime_data.client
+    backup_folder = entry.data.get(CONF_FOLDER_NAME, DEFAULT_FOLDER_NAME)
+    targets = [PurePosixPath("/" + _clean_folder(raw)) for raw in call.data[CONF_PATH]]
+    for raw, target in zip(call.data[CONF_PATH], targets, strict=True):
+        if target.parts[1:2] == (backup_folder,):
+            # Backups are managed by Home Assistant's backup settings (retention).
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="backup_folder_protected",
+                translation_placeholders={"path": raw, "folder": backup_folder},
+            )
+
     deleted: list[str] = []
-    for raw in call.data[CONF_PATH]:
-        target = PurePosixPath("/" + raw.strip("/"))
+    missing: list[str] = []
+    failed: list[str] = []
+    for raw, target in zip(call.data[CONF_PATH], targets, strict=True):
         try:
             folder_uuid = await client.find_folder_path(
                 client.user.root_folder_uuid, str(target.parent)
@@ -196,22 +275,34 @@ async def _async_delete(hass: HomeAssistant, call: ServiceCall) -> ServiceRespon
                 else None
             )
             if file is None:
-                raise ServiceValidationError(
-                    translation_domain=DOMAIN,
-                    translation_key="path_not_found",
-                    translation_placeholders={"path": raw},
-                )
+                missing.append(raw)
+                continue
             if call.data[CONF_PERMANENTLY]:
                 await client.delete_file(file.uuid)
             else:
                 await client.trash_file(file.uuid)
-        except InternxtNotFoundError as err:
-            raise ServiceValidationError(
-                translation_domain=DOMAIN,
-                translation_key="path_not_found",
-                translation_placeholders={"path": raw},
-            ) from err
+            deleted.append(str(target).lstrip("/"))
+        except InternxtNotFoundError:
+            missing.append(raw)
+        except InternxtAuthError as err:
+            raise _internxt_error(hass, entry, err, "delete_failed", path=raw) from err
         except InternxtError as err:
-            _raise_internxt(err, "delete_failed", path=raw)
-        deleted.append(str(target).lstrip("/"))
+            _LOGGER.warning("Deleting %s in Internxt failed: %s", raw, err)
+            failed.append(f"{raw} ({err})")
+
+    if failed:
+        raise HomeAssistantError(
+            translation_domain=DOMAIN,
+            translation_key="delete_failed",
+            translation_placeholders={
+                "path": ", ".join(failed),
+                "error": f"{len(deleted)} deleted",
+            },
+        )
+    if missing:
+        raise ServiceValidationError(
+            translation_domain=DOMAIN,
+            translation_key="path_not_found",
+            translation_placeholders={"path": ", ".join(missing)},
+        )
     return {"deleted": deleted}

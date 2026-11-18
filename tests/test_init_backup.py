@@ -7,8 +7,6 @@ from typing import Any
 from unittest.mock import patch
 
 import pytest
-from pytest_homeassistant_custom_component.common import MockConfigEntry
-
 from homeassistant.components.backup import (
     AddonInfo,
     AgentBackup,
@@ -29,6 +27,7 @@ from custom_components.internxt.aiointernxt import (
 from custom_components.internxt.const import CONF_TOKEN, DEFAULT_FOLDER_NAME
 from custom_components.internxt.diagnostics import async_get_config_entry_diagnostics
 
+from .common import MockConfigEntry
 from .conftest import EMAIL, MNEMONIC, FakeClient
 
 BACKUP = AgentBackup(

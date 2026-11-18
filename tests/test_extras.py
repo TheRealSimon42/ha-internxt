@@ -3,11 +3,8 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
-from pytest_homeassistant_custom_component.common import MockConfigEntry
-
 from homeassistant.components.media_source import (
     URI_SCHEME,
     async_browse_media,
@@ -19,23 +16,8 @@ from homeassistant.setup import async_setup_component
 
 from custom_components.internxt.const import DOMAIN
 
+from .common import MockConfigEntry
 from .conftest import FakeClient
-
-
-@pytest.fixture
-async def loaded(
-    hass: HomeAssistant,
-    fake_client: FakeClient,
-    config_entry: MockConfigEntry,
-    tmp_path: Path,
-) -> MockConfigEntry:
-    hass.config.allowlist_external_dirs = {str(tmp_path)}
-    with patch("homeassistant.components.backup.is_hassio", return_value=False):
-        assert await async_setup_component(hass, "backup", {})
-    config_entry.add_to_hass(hass)
-    await hass.config_entries.async_setup(config_entry.entry_id)
-    await hass.async_block_till_done()
-    return config_entry
 
 
 async def _upload(

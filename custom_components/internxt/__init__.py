@@ -96,13 +96,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: InternxtConfigEntry) -> 
         ) from err
 
     coordinator = InternxtStorageCoordinator(hass, entry, client)
-    # Storage sensors are extras: if usage can't be read now, they start unavailable
-    # instead of blocking backups.
-    await coordinator.async_refresh()
     entry.runtime_data = InternxtRuntimeData(
         client=client, folder_uuid=folder.uuid, coordinator=coordinator
     )
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    # Storage sensors are extras: read usage in the background so a slow answer
+    # never delays the backup agent; the sensors fill in a few seconds later.
+    entry.async_create_background_task(
+        hass, coordinator.async_refresh(), f"{DOMAIN} storage first refresh"
+    )
 
     async def _refresh_periodically(now: datetime) -> None:
         try:

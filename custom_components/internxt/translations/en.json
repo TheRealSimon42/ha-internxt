@@ -88,6 +88,18 @@
     },
     "delete_failed": {
       "message": "Deleting {path} in Internxt failed: {error}"
+    },
+    "invalid_path": {
+      "message": "{path} is not a valid Internxt path."
+    },
+    "duplicate_name": {
+      "message": "{name} appears more than once; Internxt folders need unique file names."
+    },
+    "backup_folder_protected": {
+      "message": "{path} is in the backup folder {folder}. Delete backups in Settings → System → Backups instead, so Home Assistant keeps track of them."
+    },
+    "overwrite_incomplete": {
+      "message": "The new version of {path} was uploaded as {temp}, the old version is in the Internxt trash, but renaming failed ({error}). Rename {temp} in Internxt."
     }
   },
   "entity": {
@@ -125,13 +137,13 @@
         },
         "overwrite": {
           "name": "Overwrite",
-          "description": "Replace a file with the same name; the old version is moved to the Internxt trash."
+          "description": "Replace a file with the same name. The new file is uploaded first; only then the old version is moved to the Internxt trash."
         }
       }
     },
     "delete": {
       "name": "Delete files",
-      "description": "Deletes files in Internxt. By default they are moved to the Internxt trash.",
+      "description": "Deletes files in Internxt. By default they are moved to the Internxt trash. Backups can't be deleted here; use the backup settings.",
       "fields": {
         "config_entry_id": {
           "name": "Internxt account",

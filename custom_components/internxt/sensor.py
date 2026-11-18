@@ -11,7 +11,7 @@ from homeassistant.components.sensor import (
     SensorEntityDescription,
     SensorStateClass,
 )
-from homeassistant.const import PERCENTAGE, UnitOfInformation
+from homeassistant.const import PERCENTAGE, EntityCategory, UnitOfInformation
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
@@ -32,7 +32,9 @@ class InternxtSensorDescription(SensorEntityDescription):
 
 
 def _bytes_sensor(
-    key: str, value_fn: Callable[[StorageInfo], float]
+    key: str,
+    value_fn: Callable[[StorageInfo], float],
+    entity_category: EntityCategory | None = None,
 ) -> InternxtSensorDescription:
     return InternxtSensorDescription(
         key=key,
@@ -42,6 +44,7 @@ def _bytes_sensor(
         native_unit_of_measurement=UnitOfInformation.BYTES,
         suggested_unit_of_measurement=UnitOfInformation.GIGABYTES,
         suggested_display_precision=1,
+        entity_category=entity_category,
         value_fn=value_fn,
     )
 
@@ -49,7 +52,7 @@ def _bytes_sensor(
 SENSORS: tuple[InternxtSensorDescription, ...] = (
     _bytes_sensor("storage_used", lambda s: s.used),
     _bytes_sensor("storage_free", lambda s: s.free),
-    _bytes_sensor("storage_total", lambda s: s.total),
+    _bytes_sensor("storage_total", lambda s: s.total, EntityCategory.DIAGNOSTIC),
     InternxtSensorDescription(
         key="storage_used_percent",
         translation_key="storage_used_percent",

@@ -1,6 +1,9 @@
 {
   "domain": "internxt",
   "name": "Internxt",
+  "categories": [
+    "computers_network.cloud_developer_tools"
+  ],
   "codeowners": [
     "@TheRealSimon42"
   ],

@@ -47,11 +47,19 @@ Files must be in a folder Home Assistant may read, like `/media` or `/config/www
 
 ## Installation
 
-**HACS (custom repository):** HACS → ⋮ → *Custom repositories* → add `https://github.com/TheRealSimon42/ha-internxt` as type *Integration*, install **Internxt**, restart Home Assistant.
+[![Open this repository in your Home Assistant](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=TheRealSimon42&repository=ha-internxt&category=integration)
+
+**Marketplace (Home Assistant 2026.11 and newer):** click the button above, or add `https://github.com/TheRealSimon42/ha-internxt` as a repository from a link in **Settings → Marketplace**, install **Internxt**, restart Home Assistant.
+
+<!-- ha-marketplace:exclude-start -->
+**HACS (Home Assistant before 2026.11):** HACS → ⋮ → *Custom repositories* → add `https://github.com/TheRealSimon42/ha-internxt` as type *Integration*, install **Internxt**, restart Home Assistant.
+<!-- ha-marketplace:exclude-end -->
 
 **Manual:** copy `custom_components/internxt` into `config/custom_components/` and restart Home Assistant.
 
 ## Setup
+
+[![Add the Internxt integration](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=internxt)
 
 1. **Settings → Devices & services → Add integration → Internxt**, log in with e-mail and password (plus 2FA code if enabled). Setup creates the folder *Home Assistant Backups* and runs a short connection test.
 2. **Settings → System → Backups → Backup settings**: select Internxt as a location.
@@ -70,7 +78,7 @@ Files must be in a folder Home Assistant may read, like `/media` or `/config/www
 |---|---|
 | `custom_components/internxt/` | The Home Assistant integration (config flow with 2FA and reauth, backup agent, diagnostics, de/en) |
 | `aiointernxt/` | Async Python client for Internxt Drive: login, token refresh, AES-256-CTR, streaming up- and download |
-| `tests/` | Integration tests (`pytest-homeassistant-custom-component`) |
+| `tests/` | Integration tests (`pytest-homeassistant`) |
 | `poc/poc.py` | End-to-end check against a real account |
 | `scripts/` | Library sync and backup decryption helper |
 

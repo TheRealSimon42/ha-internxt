@@ -86,4 +86,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development.
 
 ## License
 
-MIT. The protocol implementation is ported from [internxt/rclone-adapter](https://github.com/internxt/rclone-adapter) (MIT). This is a community project, not an official Internxt product.
+MIT (see [NOTICE](NOTICE) for third-party code). The protocol implementation is ported from [internxt/rclone-adapter](https://github.com/internxt/rclone-adapter) (MIT). This is a community project, not an official Internxt product.

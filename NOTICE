@@ -1,0 +1,7 @@
+Third-party notice
+
+The Internxt protocol implementation in aiointernxt is ported from
+internxt/rclone-adapter (https://github.com/internxt/rclone-adapter),
+licensed under the MIT License:
+Copyright (c) 2025 StarHack https://github.com/StarHack/
+Copyright (c) 2025 Internxt

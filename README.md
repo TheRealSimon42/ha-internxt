@@ -22,14 +22,44 @@ Eine Integration zu bauen ist der leichte Teil, sie am Laufen zu halten die eige
 - Integrity check on every download, free-space check before every upload
 - Old backups are deleted permanently (not to the trash), so retention frees space
 - Diagnostics with e-mail, token and account key redacted; English and German
+- **Actions** `internxt.upload` and `internxt.delete`: upload files from Home Assistant (for example camera snapshots from an automation) and delete them again, to the Internxt trash by default
+- **Storage sensors**: used, free and total storage plus usage in percent
+- **Media source**: browse your Internxt folders in the media browser and play images, videos and audio, with seeking
+
+### Example: send a snapshot to Internxt when the doorbell rings
+
+```yaml
+actions:
+  - action: camera.snapshot
+    target:
+      entity_id: camera.front_door
+    data:
+      filename: /media/snapshots/front_door.jpg
+  - action: internxt.upload
+    data:
+      config_entry_id: YOUR_INTERNXT_ENTRY_ID  # pick the account in the action editor
+      filename: /media/snapshots/front_door.jpg
+      destination_folder: Home Assistant Uploads/Kameras
+      overwrite: true
+```
+
+Files must be in a folder Home Assistant may read, like `/media` or `/config/www`, or one listed under `allowlist_external_dirs`.
 
 ## Installation
 
-**HACS (custom repository):** HACS → ⋮ → *Custom repositories* → add `https://github.com/TheRealSimon42/ha-internxt` as type *Integration*, install **Internxt**, restart Home Assistant.
+[![Open this repository in your Home Assistant](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=TheRealSimon42&repository=ha-internxt&category=integration)
+
+**Marketplace (Home Assistant 2026.11 and newer):** click the button above, or add `https://github.com/TheRealSimon42/ha-internxt` as a repository from a link in **Settings → Marketplace**, install **Internxt**, restart Home Assistant.
+
+<!-- ha-marketplace:exclude-start -->
+**HACS (Home Assistant before 2026.11):** HACS → ⋮ → *Custom repositories* → add `https://github.com/TheRealSimon42/ha-internxt` as type *Integration*, install **Internxt**, restart Home Assistant.
+<!-- ha-marketplace:exclude-end -->
 
 **Manual:** copy `custom_components/internxt` into `config/custom_components/` and restart Home Assistant.
 
 ## Setup
+
+[![Add the Internxt integration](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=internxt)
 
 1. **Settings → Devices & services → Add integration → Internxt**, log in with e-mail and password (plus 2FA code if enabled). Setup creates the folder *Home Assistant Backups* and runs a short connection test.
 2. **Settings → System → Backups → Backup settings**: select Internxt as a location.
@@ -48,7 +78,7 @@ Eine Integration zu bauen ist der leichte Teil, sie am Laufen zu halten die eige
 |---|---|
 | `custom_components/internxt/` | The Home Assistant integration (config flow with 2FA and reauth, backup agent, diagnostics, de/en) |
 | `aiointernxt/` | Async Python client for Internxt Drive: login, token refresh, AES-256-CTR, streaming up- and download |
-| `tests/` | Integration tests (`pytest-homeassistant-custom-component`) |
+| `tests/` | Integration tests (`pytest-homeassistant`) |
 | `poc/poc.py` | End-to-end check against a real account |
 | `scripts/` | Library sync and backup decryption helper |
 
@@ -56,4 +86,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development.
 
 ## License
 
-MIT. The protocol implementation is ported from [internxt/rclone-adapter](https://github.com/internxt/rclone-adapter) (MIT). This is a community project, not an official Internxt product.
+MIT (see [NOTICE](NOTICE) for third-party code). The protocol implementation is ported from [internxt/rclone-adapter](https://github.com/internxt/rclone-adapter) (MIT). This is a community project, not an official Internxt product.

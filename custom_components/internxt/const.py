@@ -23,3 +23,7 @@ TOKEN_MIN_REMAINING: Final = timedelta(hours=12)
 DATA_BACKUP_AGENT_LISTENERS: HassKey[list[Callable[[], None]]] = HassKey(
     f"{DOMAIN}.backup_agent_listeners"
 )
+
+DEFAULT_UPLOAD_FOLDER: Final = "Home Assistant Uploads"
+STORAGE_UPDATE_INTERVAL: Final = timedelta(minutes=30)
+MEDIA_VIEW_URL: Final = "/api/internxt/media"

@@ -46,14 +46,18 @@ STEP_USER_SCHEMA = vol.Schema(
             TextSelectorConfig(type=TextSelectorType.EMAIL, autocomplete="username")
         ),
         vol.Required(CONF_PASSWORD): TextSelector(
-            TextSelectorConfig(type=TextSelectorType.PASSWORD, autocomplete="current-password")
+            TextSelectorConfig(
+                type=TextSelectorType.PASSWORD, autocomplete="current-password"
+            )
         ),
     }
 )
 STEP_PASSWORD_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_PASSWORD): TextSelector(
-            TextSelectorConfig(type=TextSelectorType.PASSWORD, autocomplete="current-password")
+            TextSelectorConfig(
+                type=TextSelectorType.PASSWORD, autocomplete="current-password"
+            )
         ),
     }
 )
@@ -81,10 +85,14 @@ class InternxtConfigFlow(ConfigFlow, domain=DOMAIN):
 
     def _get_client(self) -> InternxtClient:
         if self._client is None:
-            self._client = InternxtClient(async_get_clientsession(self.hass), client_name=CLIENT_NAME)
+            self._client = InternxtClient(
+                async_get_clientsession(self.hass), client_name=CLIENT_NAME
+            )
         return self._client
 
-    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+    async def async_step_user(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
         """Ask for e-mail and password."""
         errors: dict[str, str] = {}
         if user_input is not None:
@@ -103,7 +111,9 @@ class InternxtConfigFlow(ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
-    async def async_step_reauth(self, entry_data: Mapping[str, Any]) -> ConfigFlowResult:
+    async def async_step_reauth(
+        self, entry_data: Mapping[str, Any]
+    ) -> ConfigFlowResult:
         """Start reauthentication when the stored token stopped working."""
         self._email = entry_data[CONF_EMAIL]
         return await self.async_step_reauth_confirm()
@@ -140,7 +150,9 @@ class InternxtConfigFlow(ConfigFlow, domain=DOMAIN):
                 step = "reauth_confirm" if self.source == SOURCE_REAUTH else "user"
                 return self.async_show_form(
                     step_id=step,
-                    data_schema=STEP_PASSWORD_SCHEMA if step == "reauth_confirm" else STEP_USER_SCHEMA,
+                    data_schema=STEP_PASSWORD_SCHEMA
+                    if step == "reauth_confirm"
+                    else STEP_USER_SCHEMA,
                     description_placeholders=self._placeholders(),
                     errors=errors,
                 )
@@ -151,7 +163,9 @@ class InternxtConfigFlow(ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
-    async def _async_continue_login(self, errors: dict[str, str]) -> ConfigFlowResult | None:
+    async def _async_continue_login(
+        self, errors: dict[str, str]
+    ) -> ConfigFlowResult | None:
         """Check whether 2FA is needed before the first attempt (wrong codes count as failures)."""
         assert self._email is not None
         try:
@@ -167,7 +181,9 @@ class InternxtConfigFlow(ConfigFlow, domain=DOMAIN):
             return await self.async_step_two_factor()
         return await self._async_login(None, errors)
 
-    async def _async_login(self, code: str | None, errors: dict[str, str]) -> ConfigFlowResult | None:
+    async def _async_login(
+        self, code: str | None, errors: dict[str, str]
+    ) -> ConfigFlowResult | None:
         assert self._email is not None and self._password is not None
         client = self._get_client()
         try:
@@ -206,15 +222,25 @@ class InternxtConfigFlow(ConfigFlow, domain=DOMAIN):
             return None
         return self.async_create_entry(
             title=self._email,
-            data={CONF_EMAIL: self._email, CONF_FOLDER_NAME: DEFAULT_FOLDER_NAME, **data},
+            data={
+                CONF_EMAIL: self._email,
+                CONF_FOLDER_NAME: DEFAULT_FOLDER_NAME,
+                **data,
+            },
         )
 
-    async def _async_preflight(self, client: InternxtClient, errors: dict[str, str]) -> bool:
+    async def _async_preflight(
+        self, client: InternxtClient, errors: dict[str, str]
+    ) -> bool:
         """Create the backup folder and round-trip a small file, so problems show up now."""
         try:
-            folder = await client.ensure_folder(client.user.root_folder_uuid, DEFAULT_FOLDER_NAME)
+            folder = await client.ensure_folder(
+                client.user.root_folder_uuid, DEFAULT_FOLDER_NAME
+            )
             probe = b"Home Assistant connection test for Internxt.\n"
-            uploaded = await client.upload_bytes(probe, folder_uuid=folder.uuid, name=PREFLIGHT_FILE)
+            uploaded = await client.upload_bytes(
+                probe, folder_uuid=folder.uuid, name=PREFLIGHT_FILE
+            )
             try:
                 if await client.download_bytes(uploaded) != probe:
                     raise InternxtError("connection test file came back different")

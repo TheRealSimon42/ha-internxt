@@ -7,10 +7,17 @@ from datetime import datetime
 import logging
 
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryError, ConfigEntryNotReady
+from homeassistant.exceptions import (
+    ConfigEntryAuthFailed,
+    ConfigEntryError,
+    ConfigEntryNotReady,
+)
+from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.event import async_track_time_interval
+from homeassistant.helpers.typing import ConfigType
 from homeassistant.util import dt as dt_util
 
 from .aiointernxt import (
@@ -33,18 +40,32 @@ from .const import (
     UPGRADE_URL,
 )
 
+from .coordinator import InternxtStorageCoordinator
+
 _LOGGER = logging.getLogger(__name__)
+
+PLATFORMS = [Platform.SENSOR]
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 
 @dataclass
 class InternxtRuntimeData:
-    """Objects shared by the backup agent."""
+    """Objects shared by the backup agent, actions, sensors and media source."""
 
     client: InternxtClient
     folder_uuid: str
+    coordinator: InternxtStorageCoordinator
 
 
 type InternxtConfigEntry = ConfigEntry[InternxtRuntimeData]
+
+
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    """Register the actions once for all accounts."""
+    from .services import async_setup_services  # noqa: PLC0415
+
+    async_setup_services(hass)
+    return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: InternxtConfigEntry) -> bool:
@@ -56,7 +77,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: InternxtConfigEntry) -> 
     try:
         await async_refresh_token(hass, entry, client)
         folder = await client.ensure_folder(
-            client.user.root_folder_uuid, entry.data.get(CONF_FOLDER_NAME, DEFAULT_FOLDER_NAME)
+            client.user.root_folder_uuid,
+            entry.data.get(CONF_FOLDER_NAME, DEFAULT_FOLDER_NAME),
         )
     except InternxtAuthError as err:
         raise ConfigEntryAuthFailed(
@@ -73,7 +95,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: InternxtConfigEntry) -> 
             translation_domain=DOMAIN, translation_key="cannot_connect"
         ) from err
 
-    entry.runtime_data = InternxtRuntimeData(client=client, folder_uuid=folder.uuid)
+    coordinator = InternxtStorageCoordinator(hass, entry, client)
+    entry.runtime_data = InternxtRuntimeData(
+        client=client, folder_uuid=folder.uuid, coordinator=coordinator
+    )
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    # Storage sensors are extras: read usage in the background so a slow answer
+    # never delays the backup agent; the sensors fill in a few seconds later.
+    entry.async_create_background_task(
+        hass, coordinator.async_refresh(), f"{DOMAIN} storage first refresh"
+    )
 
     async def _refresh_periodically(now: datetime) -> None:
         try:
@@ -97,7 +128,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: InternxtConfigEntry) -> 
 
 async def async_unload_entry(hass: HomeAssistant, entry: InternxtConfigEntry) -> bool:
     """Unload a config entry."""
-    return True
+    return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
 
 async def async_refresh_token(
@@ -107,10 +138,14 @@ async def async_refresh_token(
     await client.refresh()
     token = client.credentials.token
     if token != entry.data[CONF_TOKEN]:
-        hass.config_entries.async_update_entry(entry, data={**entry.data, CONF_TOKEN: token})
+        hass.config_entries.async_update_entry(
+            entry, data={**entry.data, CONF_TOKEN: token}
+        )
 
 
-async def async_ensure_fresh_token(hass: HomeAssistant, entry: InternxtConfigEntry) -> None:
+async def async_ensure_fresh_token(
+    hass: HomeAssistant, entry: InternxtConfigEntry
+) -> None:
     """Refresh before long operations when the token expires soon."""
     client = entry.runtime_data.client
     expires = client.token_expires_at

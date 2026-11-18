@@ -7,8 +7,6 @@ from typing import Any
 from unittest.mock import patch
 
 import pytest
-from pytest_homeassistant_custom_component.common import MockConfigEntry
-
 from homeassistant.components.backup import (
     AddonInfo,
     AgentBackup,
@@ -29,6 +27,7 @@ from custom_components.internxt.aiointernxt import (
 from custom_components.internxt.const import CONF_TOKEN, DEFAULT_FOLDER_NAME
 from custom_components.internxt.diagnostics import async_get_config_entry_diagnostics
 
+from .common import MockConfigEntry
 from .conftest import EMAIL, MNEMONIC, FakeClient
 
 BACKUP = AgentBackup(
@@ -55,7 +54,7 @@ async def setup_integration(
         assert await async_setup_component(hass, "backup", {})
     config_entry.add_to_hass(hass)
     await hass.config_entries.async_setup(config_entry.entry_id)
-    await hass.async_block_till_done()
+    await hass.async_block_till_done(wait_background_tasks=True)
     return config_entry
 
 
@@ -197,4 +196,7 @@ async def test_diagnostics_has_no_secrets(
 async def test_unload(hass: HomeAssistant, setup_integration: MockConfigEntry) -> None:
     assert await hass.config_entries.async_unload(setup_integration.entry_id)
     assert setup_integration.state is ConfigEntryState.NOT_LOADED
-    assert f"internxt.{setup_integration.entry_id}" not in async_get_manager(hass).backup_agents
+    assert (
+        f"internxt.{setup_integration.entry_id}"
+        not in async_get_manager(hass).backup_agents
+    )

@@ -61,6 +61,103 @@
     },
     "operation_failed": {
       "message": "Internxt operation failed: {error}"
+    },
+    "update_failed": {
+      "message": "Could not read the Internxt storage usage: {error}"
+    },
+    "entry_not_found": {
+      "message": "No Internxt account with the ID {entry_id}."
+    },
+    "entry_not_loaded": {
+      "message": "The Internxt account {title} is not loaded."
+    },
+    "no_access_to_path": {
+      "message": "Home Assistant is not allowed to read {filename}. Use a folder like /media or /config/www, or add it to allowlist_external_dirs."
+    },
+    "file_not_found": {
+      "message": "The file {filename} does not exist."
+    },
+    "file_exists": {
+      "message": "{path} already exists in Internxt. Turn on overwrite to replace it."
+    },
+    "upload_failed": {
+      "message": "Upload of {filename} to Internxt failed: {error}"
+    },
+    "path_not_found": {
+      "message": "{path} was not found in Internxt."
+    },
+    "delete_failed": {
+      "message": "Deleting {path} in Internxt failed: {error}"
+    },
+    "invalid_path": {
+      "message": "{path} is not a valid Internxt path."
+    },
+    "duplicate_name": {
+      "message": "{name} appears more than once; Internxt folders need unique file names."
+    },
+    "backup_folder_protected": {
+      "message": "{path} is in the backup folder {folder}. Delete backups in Settings → System → Backups instead, so Home Assistant keeps track of them."
+    },
+    "overwrite_incomplete": {
+      "message": "The new version of {path} was uploaded as {temp}, the old version is in the Internxt trash, but renaming failed ({error}). Rename {temp} in Internxt."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "storage_used": {
+        "name": "Storage used"
+      },
+      "storage_free": {
+        "name": "Storage free"
+      },
+      "storage_total": {
+        "name": "Storage total"
+      },
+      "storage_used_percent": {
+        "name": "Storage used percentage"
+      }
+    }
+  },
+  "services": {
+    "upload": {
+      "name": "Upload files",
+      "description": "Uploads files from Home Assistant to Internxt, encrypted on this device. Only files in allowed folders (for example /media or /config/www) can be uploaded.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Internxt account",
+          "description": "The Internxt account to upload to."
+        },
+        "filename": {
+          "name": "Files",
+          "description": "Full paths of the files to upload."
+        },
+        "destination_folder": {
+          "name": "Destination folder",
+          "description": "Folder in Internxt, subfolders separated by /. Missing folders are created."
+        },
+        "overwrite": {
+          "name": "Overwrite",
+          "description": "Replace a file with the same name. The new file is uploaded first; only then the old version is moved to the Internxt trash."
+        }
+      }
+    },
+    "delete": {
+      "name": "Delete files",
+      "description": "Deletes files in Internxt. By default they are moved to the Internxt trash. Backups can't be deleted here; use the backup settings.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Internxt account",
+          "description": "The Internxt account to delete from."
+        },
+        "path": {
+          "name": "Paths",
+          "description": "Paths of the files in Internxt, for example Home Assistant Uploads/front_door.jpg."
+        },
+        "permanently": {
+          "name": "Delete permanently",
+          "description": "Delete right away instead of moving to the trash. This cannot be undone."
+        }
+      }
     }
   }
 }

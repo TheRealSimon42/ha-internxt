@@ -61,6 +61,103 @@
     },
     "operation_failed": {
       "message": "Internxt-Vorgang fehlgeschlagen: {error}"
+    },
+    "update_failed": {
+      "message": "Speicherbelegung von Internxt nicht lesbar: {error}"
+    },
+    "entry_not_found": {
+      "message": "Kein Internxt-Konto mit der ID {entry_id}."
+    },
+    "entry_not_loaded": {
+      "message": "Das Internxt-Konto {title} ist nicht geladen."
+    },
+    "no_access_to_path": {
+      "message": "Home Assistant darf {filename} nicht lesen. Nimm einen Ordner wie /media oder /config/www oder trage ihn unter allowlist_external_dirs ein."
+    },
+    "file_not_found": {
+      "message": "Die Datei {filename} gibt es nicht."
+    },
+    "file_exists": {
+      "message": "{path} gibt es in Internxt schon. Schalte „Überschreiben“ ein, um sie zu ersetzen."
+    },
+    "upload_failed": {
+      "message": "Hochladen von {filename} zu Internxt fehlgeschlagen: {error}"
+    },
+    "path_not_found": {
+      "message": "{path} wurde in Internxt nicht gefunden."
+    },
+    "delete_failed": {
+      "message": "Löschen von {path} in Internxt fehlgeschlagen: {error}"
+    },
+    "invalid_path": {
+      "message": "{path} ist kein gültiger Internxt-Pfad."
+    },
+    "duplicate_name": {
+      "message": "{name} kommt mehrfach vor; in einem Internxt-Ordner müssen Dateinamen eindeutig sein."
+    },
+    "backup_folder_protected": {
+      "message": "{path} liegt im Backup-Ordner {folder}. Backups bitte unter Einstellungen → System → Backups löschen, damit Home Assistant den Überblick behält."
+    },
+    "overwrite_incomplete": {
+      "message": "Die neue Fassung von {path} liegt als {temp} in Internxt, die alte im Papierkorb, aber das Umbenennen ist fehlgeschlagen ({error}). Benenne {temp} in Internxt um."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "storage_used": {
+        "name": "Speicher belegt"
+      },
+      "storage_free": {
+        "name": "Speicher frei"
+      },
+      "storage_total": {
+        "name": "Speicher gesamt"
+      },
+      "storage_used_percent": {
+        "name": "Speicher belegt (Prozent)"
+      }
+    }
+  },
+  "services": {
+    "upload": {
+      "name": "Dateien hochladen",
+      "description": "Lädt Dateien aus Home Assistant zu Internxt hoch, verschlüsselt auf diesem Gerät. Erlaubt sind nur Dateien aus freigegebenen Ordnern, zum Beispiel /media oder /config/www.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Internxt-Konto",
+          "description": "Das Internxt-Konto, in das hochgeladen wird."
+        },
+        "filename": {
+          "name": "Dateien",
+          "description": "Vollständige Pfade der Dateien, die hochgeladen werden."
+        },
+        "destination_folder": {
+          "name": "Zielordner",
+          "description": "Ordner in Internxt, Unterordner mit / getrennt. Fehlende Ordner werden angelegt."
+        },
+        "overwrite": {
+          "name": "Überschreiben",
+          "description": "Eine Datei mit gleichem Namen ersetzen. Erst wird die neue hochgeladen, danach landet die alte Fassung im Internxt-Papierkorb."
+        }
+      }
+    },
+    "delete": {
+      "name": "Dateien löschen",
+      "description": "Löscht Dateien in Internxt. Standardmäßig landen sie im Internxt-Papierkorb. Backups lassen sich hier nicht löschen, dafür gibt es die Backup-Einstellungen.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Internxt-Konto",
+          "description": "Das Internxt-Konto, in dem gelöscht wird."
+        },
+        "path": {
+          "name": "Pfade",
+          "description": "Pfade der Dateien in Internxt, zum Beispiel Home Assistant Uploads/haustuer.jpg."
+        },
+        "permanently": {
+          "name": "Endgültig löschen",
+          "description": "Sofort löschen statt in den Papierkorb verschieben. Das lässt sich nicht rückgängig machen."
+        }
+      }
     }
   }
 }

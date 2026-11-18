@@ -197,4 +197,7 @@ async def test_diagnostics_has_no_secrets(
 async def test_unload(hass: HomeAssistant, setup_integration: MockConfigEntry) -> None:
     assert await hass.config_entries.async_unload(setup_integration.entry_id)
     assert setup_integration.state is ConfigEntryState.NOT_LOADED
-    assert f"internxt.{setup_integration.entry_id}" not in async_get_manager(hass).backup_agents
+    assert (
+        f"internxt.{setup_integration.entry_id}"
+        not in async_get_manager(hass).backup_agents
+    )

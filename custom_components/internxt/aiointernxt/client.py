@@ -399,6 +399,25 @@ class InternxtClient:
                 return folder
         return await self.create_folder(parent_uuid, name)
 
+    async def ensure_folder_path(self, parent_uuid: str, path: str) -> str:
+        """Create every folder of a slash-separated path below parent; return the last uuid."""
+        current = parent_uuid
+        for part in (p for p in path.strip("/").split("/") if p):
+            current = (await self.ensure_folder(current, part)).uuid
+        return current
+
+    async def find_folder_path(self, parent_uuid: str, path: str) -> str | None:
+        """Uuid of an existing slash-separated folder path below parent, or None."""
+        current = parent_uuid
+        for part in (p for p in path.strip("/").split("/") if p):
+            match = next(
+                (f for f in await self.list_folders(current) if f.name == part), None
+            )
+            if match is None:
+                return None
+            current = match.uuid
+        return current
+
     # ------------------------------------------------------------------ files
 
     @_translate_unexpected
@@ -410,6 +429,33 @@ class InternxtClient:
             headers=self._bearer(),
             expect_json=False,
         )
+
+    @_translate_unexpected
+    async def trash_file(self, file_uuid: str) -> None:
+        """Move a file to the Internxt trash (recoverable there)."""
+        await self._request(
+            "POST",
+            f"{self._drive}/storage/trash/add",
+            headers=self._bearer(),
+            json={"items": [{"uuid": file_uuid, "type": "file"}]},
+            expect_json=False,
+        )
+
+    @_translate_unexpected
+    async def file_meta(self, file_uuid: str) -> DriveFile:
+        """Metadata of one file by its drive uuid."""
+        data = await self._request(
+            "GET", f"{self._drive}/files/{file_uuid}/meta", headers=self._bearer()
+        )
+        return DriveFile.from_api(data)
+
+    @_translate_unexpected
+    async def find_file(self, folder_uuid: str, name: str) -> DriveFile | None:
+        """File with this display name (name.ext) in a folder, or None."""
+        for f in await self.list_files(folder_uuid):
+            if f.name == name:
+                return f
+        return None
 
     async def _file_key_iv(self, index: bytes) -> tuple[bytes, bytes]:
         mnemonic, bucket = self.credentials.mnemonic, self.user.bucket
@@ -683,14 +729,23 @@ class InternxtClient:
         return None
 
     @_translate_unexpected
-    async def download(self, file: DriveFile) -> DownloadStream:
+    async def download(
+        self, file: DriveFile, *, start: int = 0, end: int | None = None
+    ) -> DownloadStream:
         """Return a stream of the decrypted file; iterate it or close it with `aclose()`.
 
-        The hash is checked after the last byte; a mismatch raises
-        InternxtIntegrityError instead of ending the iteration, so discard the data.
+        `start`/`end` (inclusive) select a byte range, e.g. for seeking in videos.
+        For a full download the hash is checked after the last byte; a mismatch
+        raises InternxtIntegrityError instead of ending the iteration, so discard
+        the data. Ranges cannot be checked against the stored hash.
         """
+        if end is None or end >= file.size:
+            end = file.size - 1
+        partial = start > 0 or end < file.size - 1
+        if partial and (start < 0 or start > end):
+            raise InternxtError(f"invalid range {start}-{end} for {file.size} bytes")
         if not file.file_id or file.size == 0:
-            return DownloadStream(None, None, "")
+            return DownloadStream(None, None, None)
         bucket = self.user.bucket
         info = await self._request(
             "GET",
@@ -704,10 +759,11 @@ class InternxtClient:
                 f"{len(shards)} shards); legacy files are not supported"
             )
         key, iv = await self._file_key_iv(bytes.fromhex(info["index"]))
+        extra = {"Range": f"bytes={start}-{end}"} if partial else None
         try:
             resp = await self._session.get(
                 shards[0]["url"],
-                headers=self._headers(),
+                headers=self._headers(extra),
                 timeout=self._transfer_timeout,
             )
         except TimeoutError as err:
@@ -721,7 +777,19 @@ class InternxtClient:
                 await _raise_for_status(resp, "GET download", storage=True)
             finally:
                 resp.release()
-        return DownloadStream(resp, crypto.ctr_cipher_at(key, iv), shards[0]["hash"])
+        if not partial:
+            return DownloadStream(
+                resp, crypto.ctr_cipher_at(key, iv), shards[0]["hash"]
+            )
+        length = end - start + 1
+        if resp.status == 206:
+            return DownloadStream(
+                resp, crypto.ctr_cipher_at(key, iv, start), None, limit=length
+            )
+        # storage ignored the Range header: decrypt from the start and cut out the range
+        return DownloadStream(
+            resp, crypto.ctr_cipher_at(key, iv), None, skip=start, limit=length
+        )
 
     async def download_bytes(self, file: DriveFile) -> bytes:
         stream = await self.download(file)
@@ -736,18 +804,42 @@ class DownloadStream:
     """Decrypting download stream. Releases the connection when exhausted or closed."""
 
     def __init__(
-        self, resp: aiohttp.ClientResponse | None, cipher: Any, expected_hash: str
+        self,
+        resp: aiohttp.ClientResponse | None,
+        cipher: Any,
+        expected_hash: str | None,
+        *,
+        skip: int = 0,
+        limit: int | None = None,
     ) -> None:
         self._resp = resp
         self._cipher = cipher
         self._expected_hash = expected_hash
         self._sha = hashlib.sha256()
         self._done = resp is None
+        self._skip = skip
+        self._left = limit
 
     def __aiter__(self) -> DownloadStream:
         return self
 
     async def __anext__(self) -> bytes:
+        while True:
+            chunk = await self._next_plain()
+            if self._skip:
+                cut = min(self._skip, len(chunk))
+                chunk, self._skip = chunk[cut:], self._skip - cut
+            if self._left is not None:
+                chunk = chunk[: self._left]
+                self._left -= len(chunk)
+                if self._left == 0:
+                    self._release()
+            if chunk:
+                return chunk
+            if self._done:
+                raise StopAsyncIteration
+
+    async def _next_plain(self) -> bytes:
         if self._done or self._resp is None:
             raise StopAsyncIteration
         try:
@@ -765,7 +857,10 @@ class DownloadStream:
             raise
         if not block:
             self._release()
-            if crypto.file_hash(self._sha.digest()) != self._expected_hash:
+            if (
+                self._expected_hash is not None
+                and crypto.file_hash(self._sha.digest()) != self._expected_hash
+            ):
                 raise InternxtIntegrityError(
                     "downloaded data does not match the stored hash"
                 )

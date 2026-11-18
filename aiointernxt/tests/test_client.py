@@ -63,6 +63,8 @@ class FakeInternxt:
         )
         self.max_upload: int | None = None
         self.starts = 0
+        self.ignore_range = False
+        self.trashed: dict[str, dict[str, Any]] = {}
         self.discard_puts = (
             False  # memory test: don't keep uploaded data in this process
         )
@@ -92,6 +94,8 @@ class FakeInternxt:
         r.add_put("/storage/{uuid}/{part}", self.put)
         r.add_get("/storage/obj/{fid}", self.get_object)
         r.add_get("/drive/files/limits", self.limits)
+        r.add_get("/drive/files/{uuid}/meta", self.file_meta)
+        r.add_post("/drive/storage/trash/add", self.trash_add)
         return app
 
     async def limits(self, request: web.Request) -> web.Response:
@@ -270,7 +274,30 @@ class FakeInternxt:
         data = self.objects[request.match_info["fid"]]["data"]
         if self.corrupt:
             data = bytes([data[0] ^ 1]) + data[1:]
+        rng = request.headers.get("Range")
+        if rng and not self.ignore_range:
+            a, b = rng.removeprefix("bytes=").split("-")
+            part = data[int(a) : int(b) + 1]
+            return web.Response(
+                status=206, body=part,
+                headers={"Content-Range": f"bytes {a}-{b}/{len(data)}"},
+            )  # fmt: skip
         return web.Response(body=data)
+
+    async def file_meta(self, request: web.Request) -> web.Response:
+        self._bearer(request)
+        f = self.files.get(request.match_info["uuid"])
+        if f is None:
+            return web.json_response({"message": "not found"}, status=404)
+        return web.json_response(f)
+
+    async def trash_add(self, request: web.Request) -> web.Response:
+        self._bearer(request)
+        body = await request.json()
+        for item in body["items"]:
+            assert item["type"] == "file"
+            self.trashed[item["uuid"]] = self.files.pop(item["uuid"])
+        return web.Response(status=200)
 
 
 @pytest.fixture
@@ -598,3 +625,43 @@ async def test_multipart_memory_stays_flat(fake, monkeypatch) -> None:
     tracemalloc.stop()
     # two fixed part buffers plus the part the in-process fake server is reading
     assert peak < 5 * part, peak
+
+
+# ---------------------------------------------------------------- media and actions
+
+
+@pytest.mark.parametrize("ignore_range", [False, True])
+@pytest.mark.parametrize(
+    ("start", "end"), [(0, 99), (1, 1), (17, 2_999_999), (2_999_000, None)]
+)
+async def test_range_download(
+    fake, ignore_range: bool, start: int, end: int | None
+) -> None:
+    server, client = fake
+    server.ignore_range = ignore_range
+    await client.login("simon@example.com", PASSWORD)
+    data = os.urandom(3_000_000)
+    f = await client.upload(
+        _chunks(data), size=len(data), folder_uuid="root-uuid", name="v.mp4"
+    )
+    stream = await client.download(f, start=start, end=end)
+    async with stream:
+        got = b"".join([c async for c in stream])
+    assert got == data[start : (end + 1) if end is not None else None]
+    assert _connections(client) == 0
+
+
+async def test_file_meta_find_trash_and_paths(fake) -> None:
+    server, client = fake
+    await client.login("simon@example.com", PASSWORD)
+    leaf = await client.ensure_folder_path("root-uuid", "/Kameras/Haustür/")
+    assert await client.ensure_folder_path("root-uuid", "Kameras/Haustür") == leaf
+    assert await client.find_folder_path("root-uuid", "Kameras/Haustür") == leaf
+    assert await client.find_folder_path("root-uuid", "Kameras/Garten") is None
+    f = await client.upload_bytes(b"jpeg", folder_uuid=leaf, name="snap.jpg")
+    assert (await client.file_meta(f.uuid)).name == "snap.jpg"
+    assert (await client.find_file(leaf, "snap.jpg")).uuid == f.uuid
+    assert await client.find_file(leaf, "other.jpg") is None
+    await client.trash_file(f.uuid)
+    assert f.uuid in server.trashed
+    assert await client.find_file(leaf, "snap.jpg") is None

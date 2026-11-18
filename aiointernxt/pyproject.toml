@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aiointernxt"
-version = "0.1.0"
+version = "0.2.0"
 description = "Async client for Internxt Drive (end-to-end encrypted cloud storage)"
 readme = "README.md"
 license = "MIT"

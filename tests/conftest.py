@@ -68,6 +68,8 @@ class FakeClient:
         self.files: dict[str, DriveFile] = {}
         self.data: dict[str, bytes] = {}
         self.deleted: list[str] = []
+        self.trashed: list[str] = []
+        self.download_ranges: list[tuple[int, int | None]] = []
         self.refresh_calls = 0
 
     # session-bound constructor signature
@@ -95,7 +97,9 @@ class FakeClient:
     async def security_details(self, email: str) -> SecurityDetails:
         return SecurityDetails(two_factor=self.two_factor, encrypted_salt="x")
 
-    async def login(self, email: str, password: str, tfa_code: str | None = None) -> Credentials:
+    async def login(
+        self, email: str, password: str, tfa_code: str | None = None
+    ) -> Credentials:
         if self.login_error:
             raise self.login_error
         if self.two_factor and tfa_code != "123456":
@@ -130,12 +134,50 @@ class FakeClient:
         for folder in self.folders.values():
             if folder.name == name and folder.parent_uuid == parent_uuid:
                 return folder
-        folder = DriveFolder(uuid=f"folder-{next(self._ids)}", name=name, parent_uuid=parent_uuid)
+        folder = DriveFolder(
+            uuid=f"folder-{next(self._ids)}", name=name, parent_uuid=parent_uuid
+        )
         self.folders[folder.uuid] = folder
         return folder
 
     async def list_files(self, folder_uuid: str) -> list[DriveFile]:
         return [f for f in self.files.values() if f.folder_uuid == folder_uuid]
+
+    async def list_folders(self, folder_uuid: str) -> list[DriveFolder]:
+        return [f for f in self.folders.values() if f.parent_uuid == folder_uuid]
+
+    async def ensure_folder_path(self, parent_uuid: str, path: str) -> str:
+        current = parent_uuid
+        for part in (p for p in path.strip("/").split("/") if p):
+            current = (await self.ensure_folder(current, part)).uuid
+        return current
+
+    async def find_folder_path(self, parent_uuid: str, path: str) -> str | None:
+        current = parent_uuid
+        for part in (p for p in path.strip("/").split("/") if p):
+            match = next(
+                (f for f in await self.list_folders(current) if f.name == part), None
+            )
+            if match is None:
+                return None
+            current = match.uuid
+        return current
+
+    async def find_file(self, folder_uuid: str, name: str) -> DriveFile | None:
+        return next(
+            (f for f in await self.list_files(folder_uuid) if f.name == name), None
+        )
+
+    async def file_meta(self, file_uuid: str) -> DriveFile:
+        from custom_components.internxt.aiointernxt import InternxtNotFoundError
+
+        if file_uuid not in self.files:
+            raise InternxtNotFoundError("not found")
+        return self.files[file_uuid]
+
+    async def trash_file(self, file_uuid: str) -> None:
+        self.trashed.append(file_uuid)
+        del self.files[file_uuid]
 
     async def upload(
         self, stream: AsyncIterator[bytes], *, size: int, folder_uuid: str, name: str,
@@ -159,14 +201,22 @@ class FakeClient:
         self.data[f.uuid] = data
         return f
 
-    async def upload_bytes(self, data: bytes, *, folder_uuid: str, name: str) -> DriveFile:
+    async def upload_bytes(
+        self, data: bytes, *, folder_uuid: str, name: str
+    ) -> DriveFile:
         async def gen() -> AsyncIterator[bytes]:
             yield data
 
-        return await self.upload(gen(), size=len(data), folder_uuid=folder_uuid, name=name)
+        return await self.upload(
+            gen(), size=len(data), folder_uuid=folder_uuid, name=name
+        )
 
-    async def download(self, file: DriveFile) -> FakeStream:
-        return FakeStream(self.data[file.uuid])
+    async def download(
+        self, file: DriveFile, *, start: int = 0, end: int | None = None
+    ) -> FakeStream:
+        self.download_ranges.append((start, end))
+        data = self.data[file.uuid]
+        return FakeStream(data[start : None if end is None else end + 1])
 
     async def download_bytes(self, file: DriveFile) -> bytes:
         return self.data[file.uuid]
@@ -196,6 +246,12 @@ class FakeStream:
         return self._chunks.pop(0)
 
     async def aclose(self) -> None:
+        self.closed = True
+
+    async def __aenter__(self) -> FakeStream:
+        return self
+
+    async def __aexit__(self, *exc: object) -> None:
         self.closed = True
 
 

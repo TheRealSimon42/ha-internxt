@@ -22,6 +22,28 @@ Eine Integration zu bauen ist der leichte Teil, sie am Laufen zu halten die eige
 - Integrity check on every download, free-space check before every upload
 - Old backups are deleted permanently (not to the trash), so retention frees space
 - Diagnostics with e-mail, token and account key redacted; English and German
+- **Actions** `internxt.upload` and `internxt.delete`: upload files from Home Assistant (for example camera snapshots from an automation) and delete them again, to the Internxt trash by default
+- **Storage sensors**: used, free and total storage plus usage in percent
+- **Media source**: browse your Internxt folders in the media browser and play images, videos and audio, with seeking
+
+### Example: send a snapshot to Internxt when the doorbell rings
+
+```yaml
+actions:
+  - action: camera.snapshot
+    target:
+      entity_id: camera.front_door
+    data:
+      filename: /media/snapshots/front_door.jpg
+  - action: internxt.upload
+    data:
+      config_entry_id: YOUR_INTERNXT_ENTRY_ID  # pick the account in the action editor
+      filename: /media/snapshots/front_door.jpg
+      destination_folder: Home Assistant Uploads/Kameras
+      overwrite: true
+```
+
+Files must be in a folder Home Assistant may read, like `/media` or `/config/www`, or one listed under `allowlist_external_dirs`.
 
 ## Installation
 

@@ -39,12 +39,18 @@ _LOGGER = logging.getLogger(__name__)
 CACHE_TTL = 300
 RECENT_TTL = 600  # keep own uploads visible while Internxt's listing catches up
 METADATA_VERSION = 1
-METADATA_SUFFIX = ".metadata"  # plain name suffix; Internxt stores the extension "json" separately
+METADATA_SUFFIX = (
+    ".metadata"  # plain name suffix; Internxt stores the extension "json" separately
+)
 
 
-async def async_get_backup_agents(hass: HomeAssistant, **kwargs: Any) -> list[BackupAgent]:
+async def async_get_backup_agents(
+    hass: HomeAssistant, **kwargs: Any
+) -> list[BackupAgent]:
     """Return one agent per loaded config entry."""
-    entries: list[InternxtConfigEntry] = hass.config_entries.async_loaded_entries(DOMAIN)
+    entries: list[InternxtConfigEntry] = hass.config_entries.async_loaded_entries(
+        DOMAIN
+    )
     return [InternxtBackupAgent(hass, entry) for entry in entries]
 
 
@@ -76,7 +82,9 @@ def handle_backup_errors[**P, R](
     """Turn library errors into the errors the backup manager expects."""
 
     @wraps(func)
-    async def wrapper(self: InternxtBackupAgent, *args: P.args, **kwargs: P.kwargs) -> R:
+    async def wrapper(
+        self: InternxtBackupAgent, *args: P.args, **kwargs: P.kwargs
+    ) -> R:
         try:
             return await func(self, *args, **kwargs)
         except (BackupAgentError, BackupNotFound):
@@ -125,7 +133,9 @@ class InternxtBackupAgent(BackupAgent):
     def translate_error(self, err: InternxtError) -> BackupAgentError:
         """Map a library error to a translated backup error."""
         if isinstance(err, InternxtNotFoundError):
-            return BackupNotFound(translation_domain=DOMAIN, translation_key="backup_not_found")
+            return BackupNotFound(
+                translation_domain=DOMAIN, translation_key="backup_not_found"
+            )
         if isinstance(err, InternxtAuthError):
             self._entry.async_start_reauth(self._hass)
             key = "auth_failed"
@@ -137,7 +147,9 @@ class InternxtBackupAgent(BackupAgent):
             key = "operation_failed"
         _LOGGER.debug("Internxt error: %s", err, exc_info=err)
         return BackupAgentError(
-            translation_domain=DOMAIN, translation_key=key, translation_placeholders={"error": str(err), "upgrade_url": UPGRADE_URL}
+            translation_domain=DOMAIN,
+            translation_key=key,
+            translation_placeholders={"error": str(err), "upgrade_url": UPGRADE_URL},
         )
 
     # ------------------------------------------------------------------ agent API
@@ -192,7 +204,9 @@ class InternxtBackupAgent(BackupAgent):
         self._cache[backup.backup_id] = stored
 
     @handle_backup_errors
-    async def async_download_backup(self, backup_id: str, **kwargs: Any) -> AsyncIterator[bytes]:
+    async def async_download_backup(
+        self, backup_id: str, **kwargs: Any
+    ) -> AsyncIterator[bytes]:
         """Stream a backup back from Internxt."""
         stored = await self._find(backup_id)
         stream = await self._client.download(stored.tar)
@@ -248,11 +262,15 @@ class InternxtBackupAgent(BackupAgent):
     async def _find(self, backup_id: str) -> _StoredBackup:
         if stored := (await self._list_cached()).get(backup_id):
             return stored
-        raise BackupNotFound(translation_domain=DOMAIN, translation_key="backup_not_found")
+        raise BackupNotFound(
+            translation_domain=DOMAIN, translation_key="backup_not_found"
+        )
 
     async def _list_cached(self) -> dict[str, _StoredBackup]:
         now = monotonic()
-        self._recent = {k: v for k, v in self._recent.items() if now - v[1] < RECENT_TTL}
+        self._recent = {
+            k: v for k, v in self._recent.items() if now - v[1] < RECENT_TTL
+        }
         if now >= self._cache_expires:
             self._cache = await self._load_backups()
             self._cache_expires = now + CACHE_TTL
@@ -263,7 +281,11 @@ class InternxtBackupAgent(BackupAgent):
     async def _load_backups(self) -> dict[str, _StoredBackup]:
         files = await self._client.list_files(self._folder_uuid)
         tars = {f.plain_name: f for f in files if f.type == "tar"}
-        metas = [f for f in files if f.type == "json" and f.plain_name.endswith(METADATA_SUFFIX)]
+        metas = [
+            f
+            for f in files
+            if f.type == "json" and f.plain_name.endswith(METADATA_SUFFIX)
+        ]
         semaphore = asyncio.Semaphore(4)
 
         async def load(meta: DriveFile) -> _StoredBackup | None:
@@ -274,7 +296,9 @@ class InternxtBackupAgent(BackupAgent):
                 raw = await self._client.download_bytes(meta)
             try:
                 data = json.loads(raw)
-                backup = AgentBackup.from_dict({**data["backup_metadata"], "size": tar.size})
+                backup = AgentBackup.from_dict(
+                    {**data["backup_metadata"], "size": tar.size}
+                )
             except (ValueError, KeyError, TypeError) as err:
                 _LOGGER.warning("Skipping unreadable metadata %s: %s", meta.name, err)
                 return None

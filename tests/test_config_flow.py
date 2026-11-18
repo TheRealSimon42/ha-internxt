@@ -16,7 +16,12 @@ from custom_components.internxt.aiointernxt import (
     InternxtConnectionError,
     InternxtPlanError,
 )
-from custom_components.internxt.const import CONF_MNEMONIC, CONF_TOKEN, DEFAULT_FOLDER_NAME, DOMAIN
+from custom_components.internxt.const import (
+    CONF_MNEMONIC,
+    CONF_TOKEN,
+    DEFAULT_FOLDER_NAME,
+    DOMAIN,
+)
 
 from .conftest import EMAIL, MNEMONIC, PASSWORD, USER, FakeClient
 
@@ -64,9 +69,13 @@ async def test_two_factor(hass: HomeAssistant, fake_client: FakeClient) -> None:
         result["flow_id"], {"email": EMAIL, "password": PASSWORD}
     )
     assert result["step_id"] == "two_factor"
-    result = await hass.config_entries.flow.async_configure(result["flow_id"], {"code": "000000"})
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"code": "000000"}
+    )
     assert result["errors"] == {"base": "invalid_2fa"}
-    result = await hass.config_entries.flow.async_configure(result["flow_id"], {"code": "123 456"})
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"code": "123 456"}
+    )
     assert result["type"] is FlowResultType.CREATE_ENTRY
 
 
